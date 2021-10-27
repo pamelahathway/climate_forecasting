@@ -18,6 +18,7 @@ source .bin/activate
 3. Install the necessary packages
 ```bash
 pip install pandas numpy sklearn matplotlib seaborn
+pip install flake8 isort black mypy sweetviz
 ```
 
 

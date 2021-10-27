@@ -1,6 +1,9 @@
 .DS_store
 lib/
-include/
+include
+.include/
 bin/
 .idea/
 pyvenv.cfg
+data/
+notebooks/
