@@ -211,7 +211,7 @@ def run_backtests(series: pd.DataFrame, order: Tuple = (1, 1, 1)) -> pd.DataFram
     result_collection = []
 
     fig, ax = plt.subplots(1)
-    ax.plot(series, c="g")
+    ax.plot(series, c="k")
 
     for start_idx in range(first_year_idx, series.shape[0]-NUM_YEARS_FOR_TRAINING, YEARS_TO_FORECAST):
         end_idx = start_idx + NUM_YEARS_FOR_TRAINING
@@ -230,11 +230,10 @@ def run_backtests(series: pd.DataFrame, order: Tuple = (1, 1, 1)) -> pd.DataFram
         mase = mean_absolute_error(forecast_yearly, true_temperatures)
         mape = mean_absolute_percentage_error(forecast_yearly, true_temperatures)
 
-        # todo: plot all
         print(p, d, q, start_year, start_prediction_year, round(mse, 3), round(mase, 3), round(mape, 3))
 
-        ax.plot(forecast_yearly, c="red")
-        ax.set_title(f"Forecast for years starting {start_prediction_year}\n{p=} {d=} {q=}")
+        ax.plot(forecast_yearly, c="orange")
+        ax.set_title(f"Forecast using {p=} {d=} {q=}")
 
         result_collection.append([p, d, q, start_year, start_prediction_year, mse, mase, mape])
 
@@ -257,52 +256,53 @@ for p, d, q in p_q_combinations:
 backtest_results = pd.concat(backtest_results)
 
 backtest_results[backtest_results["d"] == 1].groupby(by=["start_year"]).mean()
-backtest_results.groupby(by=["start_year"]).mean()
+backtest_results.groupby(by=["start_prediction_year"]).mean()
 
-mean_performance_per_order = backtest_results.groupby(by=["p", "d", "q"]).mean()
-ax = mean_performance_per_order[["mse", "mase", "mape"]].sort_values(by="mse").plot(figsize=(10, 4))
+mean_performance_per_order = backtest_results.groupby(by=["p", "d", "q"]).mean().sort_values(by="mse")
+
+ax = mean_performance_per_order[["mse", "mase", "mape"]].plot(figsize=(10, 4))
 ax.set_xticks(range(mean_performance_per_order.shape[0]))
 ax.set_xticklabels(mean_performance_per_order.index, rotation=45, ha="right")
-ax.set_xlabel("average performance across all backtests")
+ax.set_ylabel("average performance across all backtests")
+ax.set_xlabel("values of p, d, q")
 ax.set_title("performance of ARIMA model (sorted)")
 plt.tight_layout()
 
 
-backtest_results.set_index(["p", "d", "q"])
 
-
-test_set_perc = 0.1
-years_to_forecast = int(avg_temp_per_year.shape[0]*test_set_perc)
-idx_train_test_split = avg_temp_per_year.shape[0] - years_to_forecast
-
-avg_temp_per_year_train = avg_temp_per_year.iloc[:idx_train_test_split]
-avg_temp_per_year_test = avg_temp_per_year.iloc[idx_train_test_split:]
-
-
-
-
-plt.rcParams['figure.figsize'] = [10, 6]
+# do the actual forecast
+best_performing_order = mean_performance_per_order.index[0]
+best_performing_backtest_result, fig = run_backtests(series=avg_temp_per_year["LandAverageTemperature"], order=best_performing_order)
 
 # Forecast temperatures using an ARIMA model
-mod = ARIMA(avg_temp_per_year_train["LandAverageTemperature"], order=(1, 2, 1))
+mod = ARIMA(avg_temp_per_year["LandAverageTemperature"], order=best_performing_order)
 fitted_model = mod.fit()
-print(round(fitted_model.aic, 2))
 
 # Get forecast
-forecast_yearly = fitted_model.get_forecast(steps=years_to_forecast)
+forecast_yearly = fitted_model.get_forecast(steps=YEARS_TO_FORECAST)
 forecast_yearly_ci = forecast_yearly.conf_int()
 
-plt.figure()
-plt.plot(forecast_yearly.predicted_mean, color='r', label="prediction")
-plt.fill_between(forecast_yearly.row_labels,
+fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+ax[0].plot(forecast_yearly.predicted_mean, color='r', label="future prediction")
+ax[0].fill_between(forecast_yearly.row_labels,
                 forecast_yearly_ci.iloc[:, 0],
                 forecast_yearly_ci.iloc[:, 1], color='r', alpha=.2, label="confidence interval")
-plt.plot(avg_temp_per_year["LandAverageTemperature"], color='k', label="observation")
-plt.plot(fitted_model.predict(), color='orange', label="prediction")
-plt.xlabel('Year')
-plt.ylabel('average yearly temperature')
-plt.title('Prediction')
+ax[0].plot(avg_temp_per_year["LandAverageTemperature"], color='k', label="observation")
+ax[0].plot(fitted_model.predict(), color='orange', label="prediction")
+ax[0].set_ylabel('average yearly temperature')
+ax[0].set_title('Prediction')
+
+ax[1].plot(forecast_yearly.predicted_mean, color='r', label="future prediction")
+ax[1].fill_between(forecast_yearly.row_labels,
+                forecast_yearly_ci.iloc[:, 0],
+                forecast_yearly_ci.iloc[:, 1], color='r', alpha=.2, label="confidence interval")
+ax[1].plot(avg_temp_per_year["LandAverageTemperature"][-YEARS_TO_FORECAST*3:], color='k', label="observation")
+ax[1].plot(fitted_model.predict()[-YEARS_TO_FORECAST*3:], color='orange', label="prediction")
+ax[1].set_xlabel('Year')
+ax[1].set_ylabel('average yearly temperature')
+
 plt.legend()
+plt.tight_layout()
 plt.show()
 
 
@@ -319,16 +319,67 @@ print(residuals.describe())
 # residuals mean of 0 suggests that there is low bias
 
 
-# evaluate model performance
 
-mse = mean_squared_error(forecast_yearly.predicted_mean, avg_temp_per_year_test["LandAverageTemperature"])
-mase = mean_absolute_error(forecast_yearly.predicted_mean, avg_temp_per_year_test["LandAverageTemperature"])
-mape = mean_absolute_percentage_error(forecast_yearly.predicted_mean, avg_temp_per_year_test["LandAverageTemperature"])
+
+def benchmark_backtests(series: pd.DataFrame, backtest_results: pd.DataFrame, num_years_for_benchmark: int) -> pd.DataFrame:
+
+    start_prediction_year_list = backtest_results["start_prediction_year"].unique()
+    result_collection = []
+
+    fig, ax = plt.subplots(1)
+    ax.plot(series, c="k")
+
+    for start_prediction_year in start_prediction_year_list:
+
+        benchmark_mask = (series.index.year >= start_prediction_year-num_years_for_benchmark) & (series.index.year < start_prediction_year)
+        benchmark_prediction = np.array([np.median(series[benchmark_mask])] * YEARS_TO_FORECAST)
+
+        true_values_mask = (series.index.year >= start_prediction_year) & (series.index.year < start_prediction_year+YEARS_TO_FORECAST)
+        true_temperatures = series[true_values_mask]
+
+        mse = mean_squared_error(benchmark_prediction, true_temperatures)
+        mase = mean_absolute_error(benchmark_prediction, true_temperatures)
+        mape = mean_absolute_percentage_error(benchmark_prediction, true_temperatures)
+
+        print(start_prediction_year, round(mse, 3), round(mase, 3), round(mape, 3))
+
+        ax.plot(series.index[true_values_mask], benchmark_prediction, c="orange")
+        ax.set_title(f"Benchmark forecast: median of latest {num_years_for_benchmark} years")
+
+        result_collection.append([start_prediction_year, mse, mase, mape])
+
+    result_collection = pd.DataFrame(data=result_collection, columns=["start_prediction_year", "mse", "mase", "mape"])
+
+    return result_collection, fig
+
+# benchmark: median of the last 20 year
+num_years_for_benchmark = 2*YEARS_TO_FORECAST
+backtest_benchmark_results, fig = benchmark_backtests(series=avg_temp_per_year["LandAverageTemperature"], backtest_results=backtest_results, num_years_for_benchmark=num_years_for_benchmark)
+
+
+
+# compare performance against benchmark
+best_performing_backtest_result = best_performing_backtest_result.set_index("start_prediction_year")
+backtest_benchmark_results = backtest_benchmark_results.set_index("start_prediction_year")
+performance_comparison = best_performing_backtest_result.join(backtest_benchmark_results, how="left", rsuffix="_benchmark").drop(columns=["p", "d", "q", "start_year"])
+
+fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+ax.plot(performance_comparison["mse"], c="C3", linestyle="-", label="MSE")
+ax.plot(performance_comparison["mse_benchmark"], c="C3", linestyle="--", label="MSE benchmark")
+ax.plot(performance_comparison["mase"], c="C4", linestyle="-", label="MASE")
+ax.plot(performance_comparison["mase_benchmark"], c="C4", linestyle="--", label="MASE benchmark")
+ax.plot(performance_comparison["mape"], c="C5", linestyle="-", label="MAPE")
+ax.plot(performance_comparison["mape_benchmark"], c="C5", linestyle="--", label="MAPE benchmark")
+plt.legend()
+ax.set_title("Performance best model vs benchmark")
+ax.set_ylabel("metric")
+ax.set_xlabel("start year for backtest prediction")
+plt.tight_layout()
 
 
 # train Seasonal ARIMA model
 mod = SARIMAX(avg_temp_per_month["LandAverageTemperature"],
-                                order=(2, 1, 2),
+                                order=(3, 2, 3),
                                 seasonal_order=(1, 1, 0, 12),
                                 enforce_stationarity=False,
                                 enforce_invertibility=False)
@@ -357,11 +408,9 @@ print(fitted_model.summary().tables[1])
 fitted_model.plot_diagnostics(figsize=(10, 7))
 plt.tight_layout()
 plt.show()
-# evaluate goodness of fit!
 
 
 
 # additions if time
-
 # use SARIMAX to add exogenous variables e.g. CO2, other unrelated stuff
 
