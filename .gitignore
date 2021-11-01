@@ -6,7 +6,6 @@ bin/
 .idea/
 pyvenv.cfg
 data/
-notebooks/
 share/
 etc/
 SWEETVIZ_REPORT.html
