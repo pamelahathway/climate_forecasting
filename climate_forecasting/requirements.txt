@@ -1,0 +1,10 @@
+numpy
+pandas
+statsmodel
+sklearn
+matplotlib
+seaborn
+jupyterlab
+isort
+black
+flake8

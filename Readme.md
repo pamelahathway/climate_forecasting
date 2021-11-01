@@ -10,15 +10,14 @@ https://www.kaggle.com/berkeleyearth/climate-change-earth-surface-temperature-da
 
 2. Create a virtual environment for this project
 ```bash
-cd <path to folder above climate_forecasting>
+cd <path-to-folder-above-climate_forecasting>
 python3 -m venv .
-source .bin/activate
+source bin/activate
 ```
 
 3. Install the necessary packages
 ```bash
-pip install pandas numpy sklearn matplotlib seaborn
-pip install flake8 isort black mypy sweetviz
+pip install -r requirements
 ```
 
 
@@ -27,3 +26,6 @@ pip install flake8 isort black mypy sweetviz
 ```bash
 python3 climate_forecasting/climate_forecasting.py
 ```
+
+Note:
+The code follows code quality standards set by the packages black, isort and flake8
