@@ -1,22 +1,18 @@
 import itertools as it
 import os
-import time
-from typing import List, Tuple
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import sweetviz as sv
 from sklearn.metrics import (mean_absolute_error,
                              mean_absolute_percentage_error,
                              mean_squared_error)
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf, plot_predict
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.tsa.stattools import acf, adfuller, pacf
-
-# todo: add pandas configuration
+from statsmodels.tsa.stattools import adfuller
 
 
 # parameters
@@ -28,27 +24,22 @@ def load_csv_file(filename: str):
     print(f"loading {filename}")
     df = pd.read_csv(os.path.join(data_path, f"{filename}.csv"))
     df["dt"] = pd.to_datetime(df["dt"])
+    df = df.set_index("dt")
     return df
 
 
-glob_temp = load_csv_file("GlobalTemperatures")
-# glob_temp_city = load_csv_file("GlobalLandTemperaturesByCity")
-# glob_temp_country = load_csv_file("GlobalLandTemperaturesByCountry")
-# glob_temp_major_city = load_csv_file("GlobalLandTemperaturesByMajorCity")
-# glob_temp_state = load_csv_file("GlobalLandTemperaturesByState")
+temperature = load_csv_file("GlobalTemperatures")
 
-
-glob_temp = glob_temp.set_index("dt")
 
 # plot average land and ocean temperatures
 fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(glob_temp.index, glob_temp["LandAverageTemperature"], ".-", linewidth=0.5)
+ax.plot(temperature.index, temperature["LandAverageTemperature"], ".-", linewidth=0.5)
 plt.show()
 
 
 # resample to yearly or monthly data
-avg_temp_per_year = glob_temp.resample(rule="Y").mean()
-avg_temp_per_month = glob_temp.resample(rule="M").mean()
+avg_temp_per_year = temperature.resample(rule="Y").mean()
+avg_temp_per_month = temperature.resample(rule="M").mean()
 
 
 fig, ax = plt.subplots(2, 1, figsize=(10, 8), sharex=True, sharey=False)
@@ -116,7 +107,7 @@ plt.show()
 # - seasonal and random fluctuations change as time goes on (more fluctuations at earlier times)
 #     therefore it might be wise to only use part of the time series when the noise is relatively stationary
 #     e.g. only use data from ca 1840 onwards
-
+#
 # monthly data:
 # - seasonal and random fluctuations do not change a lot as time goes on
 # - very strong seasonal effect --> should probably use SARIMA or something similar
@@ -124,9 +115,6 @@ plt.show()
 
 
 avg_temp_per_year = avg_temp_per_year[avg_temp_per_year.index.year >= 1850]
-
-# filter for relevant columns
-# avg_temp_per_year = pd.DataFrame(avg_temp_per_year["LandAverageTemperature"])
 
 # test for non-stationarity
 # ADF test determines whether the change in Y can be explained by a lagged value
@@ -169,16 +157,6 @@ time_series_is_stationary = run_adf_test(
 
 
 # check autocorrelation
-"""
-AUTOCORRELATION is just like a correlation, except that, rather than correlating two completely different variables, 
-it’s correlating a variable at time t and that same variable at time t-k
-
-A partial autocorrelation is basically the same thing, except that it removes the effect of shorter autocorrelation lags 
-when calculating the correlation at longer lags. To be more precise, the partial correlation at lag k is the 
-autocorrelation between Yt and Yt-k that is NOT accounted for by the autocorrelations from the 1st to the (k-1)st lags.
-
-Autocorrelation assumes the variables to be distributed normally
-"""
 
 # plot ACF and PACF
 fig, axes = plt.subplots(2, 1, sharex=True, sharey=True)
@@ -210,14 +188,13 @@ plt.show()
 d_values_to_try = range(1, 3)
 p_values_to_try = range(4)
 q_values_to_try = range(4)
-p_q_combinations = list(it.product(p_values_to_try, d_values_to_try, q_values_to_try))
+p_d_q_combinations = list(it.product(p_values_to_try, d_values_to_try, q_values_to_try))
 
 parameter_results = []
-for p, d, q in p_q_combinations:
+for p, d, q in p_d_q_combinations:
+    print(f"{p=} {d=} {q=}")
     mod = ARIMA(avg_temp_per_year["LandAverageTemperature"], order=(p, d, q))
     fitted_model = mod.fit()
-    print(f"{p=} {d=} {q=}")
-    # print(fitted_model.mle_retvals)
     parameter_results.append(
         [
             p,
@@ -256,7 +233,7 @@ NUM_YEARS_FOR_TRAINING = 100
 YEARS_TO_FORECAST = 10
 
 
-def run_backtests(series: pd.DataFrame, order: Tuple = (1, 1, 1)) -> pd.DataFrame:
+def run_backtests(series: pd.DataFrame, order: Tuple[int, int, int] = (1, 1, 1)) -> pd.DataFrame:
     # create backtest training and test sets
 
     num_backtests = (series.shape[0] - 100) // YEARS_TO_FORECAST
@@ -557,6 +534,3 @@ fitted_model.plot_diagnostics(figsize=(10, 7))
 plt.tight_layout()
 plt.show()
 
-
-# additions if time
-# use SARIMAX to add exogenous variables e.g. CO2, other unrelated stuff
