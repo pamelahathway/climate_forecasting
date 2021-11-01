@@ -7,3 +7,7 @@ bin/
 pyvenv.cfg
 data/
 notebooks/
+share/
+etc/
+SWEETVIZ_REPORT.html
+.ipynb_checkpoints
